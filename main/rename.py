@@ -1,50 +1,46 @@
+import time
 import os
 from pyrogram import Client, filters
+from config import temp, CAPTION, ADMIN
 from main.utils import progress_message, humanbytes
 
-# Initialize the Pyrogram client
-app = Client("file_renamer_bot")
-
-# Define the admin user ID (replace with your admin user ID)
-ADMIN = "your_admin_user_id"
-
-# Command handler to rename files
-@app.on_message(filters.private & filters.command("rename") & filters.user(ADMIN))             
+@Client.on_message(filters.private & filters.command("rename") & filters.user(ADMIN))             
 async def rename_file(bot, msg):
-    # Check if the command is accompanied by a reply to a message
-    if len(msg.command) < 2 or not msg.reply_to_message:
-        return await msg.reply_text("Please reply to a file with the desired new filename.")
-    
-    # Extract the replied message
     reply = msg.reply_to_message
-    
-    # Check if the replied message contains a document, audio, or video
+    if len(msg.command) < 2 or not reply:
+       return await msg.reply_text("Please Reply To An File or video or audio With filename + .extension eg:-(`.mkv` or `.mp4` or `.zip`)")
     media = reply.document or reply.audio or reply.video
     if not media:
-        return await msg.reply_text("Please reply to a file with the desired new filename.")
-    
-    # Get the original media file and the new filename from the command
+       await msg.reply_text("Please Reply To An File or video or audio With filename + .extension eg:-(`.mkv` or `.mp4` or `.zip`)")
     og_media = getattr(reply, reply.media.value)
     new_name = msg.text.split(" ", 1)[1]
-    
-    # Download the file and rename it
-    downloaded = await reply.download(file_name=new_name, progress=progress_message, progress_args=("Downloading...",))
-    
-    # Prepare the caption for the renamed file
-    filesize = humanbytes(og_media.file_size)
-    cap = f"{new_name}\n\n💽 Size: {filesize}"
-    
-    # Send the renamed file with the original caption
-    await bot.send_document(
-        chat_id=msg.chat.id,
-        document=downloaded,
-        caption=cap,
-        progress=progress_message,
-        progress_args=("Uploading...",)
-    )
-    
-    # Clean up: remove the downloaded file
-    os.remove(downloaded)
-
-# Run the bot
-app.run()
+    sts = await msg.reply_text("Trying to Download.....")
+    c_time = time.time()
+    downloaded = await reply.download(file_name=new_name, progress=progress_message, progress_args=("Download Started.....", sts, c_time)) 
+    filesize = humanbytes(og_media.file_size)                
+    if CAPTION:
+        try:
+            cap = CAPTION.format(file_name=new_name, file_size=filesize)
+        except Exception as e:            
+            await sts.edit(text=f"Your caption Error unexpected keyword ●> ({e})")
+            return
+    else:
+        cap = f"{new_name}\n\n💽 size : {filesize}"
+    raw_thumbnail = temp.THUMBNAIL 
+    if raw_thumbnail:
+        og_thumbnail = await bot.download_media(raw_thumbnail)
+    else:
+        og_thumbnail = await bot.download_media(og_media.thumbs[0].file_id)
+    await sts.edit("Trying to Upload...")
+    c_time = time.time()
+    try:
+        await bot.send_document(msg.chat.id, document=downloaded, thumb=og_thumbnail, caption=cap, progress=progress_message, progress_args=("Uploading Started.....", sts, c_time))        
+    except Exception as e:  
+        await sts.edit(f"Error {e}") 
+        return               
+    try:
+        os.remove(downloaded)
+        os.remove(og_thumbnail)
+    except:
+        pass
+    await sts.delete()
